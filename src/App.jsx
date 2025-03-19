@@ -1,92 +1,43 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-function App() {
-	const [stream, setStream] = useState(null);
-	const [error, setError] = useState(null);
+export default function CameraStream() {
 	const videoRef = useRef(null);
+	const [streaming, setStreaming] = useState(false);
 
-	const startStream = async () => {
-		try {
-			const mediaStream = await navigator.mediaDevices.getUserMedia({
-				video: {
-					facingMode: 'environment',
-					width: { ideal: 1920 },
-					height: { ideal: 1080 },
-				},
-				audio: false,
-			});
-
-			console.log('Stream obtained:', mediaStream);
-			setStream(mediaStream);
-			setError(null);
-
-			// Принудительное обновление видео
-			if (videoRef.current) {
-				videoRef.current.srcObject = mediaStream;
+	useEffect(() => {
+		if (streaming) {
+			navigator.mediaDevices
+				.getUserMedia({ video: true })
+				.then((stream) => {
+					if (videoRef.current) {
+						videoRef.current.srcObject = stream;
+					}
+				})
+				.catch((error) => console.error('Ошибка доступа к камере:', error));
+		} else {
+			if (videoRef.current && videoRef.current.srcObject) {
+				const stream = videoRef.current.srcObject;
+				const tracks = stream.getTracks();
+				tracks.forEach((track) => track.stop());
+				videoRef.current.srcObject = null;
 			}
-		} catch (err) {
-			setError(`Camera error: ${err.message}`);
 		}
-	};
-
-	useEffect(() => {
-		const initVideo = async () => {
-			if (videoRef.current && stream) {
-				try {
-					console.log('Setting video source...');
-					videoRef.current.srcObject = stream;
-
-					await videoRef.current.play();
-					console.log('Video playback started');
-
-					// Принудительное обновление стилей
-					videoRef.current.style.display = 'block';
-				} catch (playError) {
-					setError(`Video play failed: ${playError.message}`);
-				}
-			}
-		};
-
-		initVideo();
-	}, [stream]);
-
-	useEffect(() => {
-		return () => {
-			if (stream) {
-				console.log('Cleaning up stream...');
-				stream.getTracks().forEach((track) => {
-					track.stop();
-					console.log('Track stopped:', track.kind);
-				});
-			}
-		};
-	}, [stream]);
+	}, [streaming]);
 
 	return (
-		<div className='container'>
-			<h1>Camera Debug</h1>
-
-			{error && <div className='error'>{error}</div>}
-
-			<div className='video-wrapper'>
-				<video
-					ref={videoRef}
-					playsInline
-					muted
-					autoPlay
-					style={{
-						backgroundColor: '#000',
-						width: '100%',
-						height: 'auto',
-					}}
-				/>
-			</div>
-
-			<button onClick={startStream} disabled={!!stream}>
-				{stream ? 'Camera Active' : 'Start Camera'}
+		<div className='flex flex-col items-center p-4'>
+			<h1 className='text-xl font-bold mb-4'>Камера в браузере</h1>
+			<video
+				ref={videoRef}
+				autoPlay
+				className='w-full max-w-md rounded-lg shadow-md'
+			/>
+			<button
+				onClick={() => setStreaming(!streaming)}
+				className='mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600'
+			>
+				{streaming ? 'Остановить' : 'Запустить'} стрим
 			</button>
 		</div>
 	);
 }
-
-export default App;
