@@ -1,137 +1,128 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
-const CameraMeasureApp = () => {
+const CameraStream = () => {
+	const [isStreaming, setIsStreaming] = useState(false);
+	const [error, setError] = useState(null);
 	const videoRef = useRef(null);
-	const canvasRef = useRef(null);
-	const [points, setPoints] = useState([]);
-	const [stream, setStream] = useState(null);
-	const [cmPerPixel, setCmPerPixel] = useState(null);
-	const [isCalibrating, setIsCalibrating] = useState(false);
-	const [knownDistance, setKnownDistance] = useState('');
-	const animationFrameRef = useRef();
+	const streamRef = useRef(null);
 
-	// Инициализация камеры
-	const startCamera = async () => {
+	const startStream = async () => {
 		try {
-			const newStream = await navigator.mediaDevices.getUserMedia({
-				video: { facingMode: 'environment' },
-			});
-			const video = videoRef.current;
-			video.srcObject = newStream;
+			const constraints = {
+				video: {
+					facingMode: 'environment', // Используем заднюю камеру
+					width: { ideal: 1920 },
+					height: { ideal: 1080 },
+				},
+			};
 
-			await new Promise((resolve) => {
-				video.onloadedmetadata = () => {
-					video.play();
-					const canvas = canvasRef.current;
-					canvas.width = video.videoWidth;
-					canvas.height = video.videoHeight;
-					resolve();
-				};
-			});
+			const stream = await navigator.mediaDevices.getUserMedia(constraints);
+			streamRef.current = stream;
 
-			setStream(newStream);
-			startCanvasAnimation();
-		} catch (error) {
-			console.error('Error accessing camera:', error);
+			if (videoRef.current) {
+				videoRef.current.srcObject = stream;
+				videoRef.current.play();
+			}
+
+			setIsStreaming(true);
+			setError(null);
+		} catch (err) {
+			setError(err.message);
+			setIsStreaming(false);
 		}
 	};
 
-	// Калибровка системы
-	const handleCalibration = () => {
-		if (points.length === 2 && knownDistance) {
-			const dx = points[1].x - points[0].x;
-			const dy = points[1].y - points[0].y;
-			const pixelDistance = Math.sqrt(dx ** 2 + dy ** 2);
-			const newCmPerPixel = parseFloat(knownDistance) / pixelDistance;
-			setCmPerPixel(newCmPerPixel);
-			setIsCalibrating(false);
-			setPoints([]);
+	const stopStream = () => {
+		if (streamRef.current) {
+			streamRef.current.getTracks().forEach((track) => track.stop());
+			streamRef.current = null;
+		}
+		setIsStreaming(false);
+	};
+
+	const toggleStream = () => {
+		if (isStreaming) {
+			stopStream();
+		} else {
+			startStream();
 		}
 	};
 
-	// Расчет расстояния с коррекцией перспективы
-	const calculateDistance = () => {
-		if (!cmPerPixel || points.length < 2) return '0.00';
-
-		const dx = points[1].x - points[0].x;
-		const dy = points[1].y - points[0].y;
-		const pixelDistance = Math.sqrt(dx ** 2 + dy ** 2);
-
-		// Базовая коррекция перспективы (требует доработки под конкретный случай)
-		const distance3D = pixelDistance * cmPerPixel * Math.cos(Math.PI / 6);
-
-		return distance3D.toFixed(2);
-	};
-
-	// Обработчик кликов для canvas
-	const handleCanvasClick = (e) => {
-		if (!isCalibrating && points.length >= 2) return;
-
-		const canvas = canvasRef.current;
-		const rect = canvas.getBoundingClientRect();
-		const scaleX = canvas.width / rect.width;
-		const scaleY = canvas.height / rect.height;
-
-		const newPoint = {
-			x: (e.clientX - rect.left) * scaleX,
-			y: (e.clientY - rect.top) * scaleY,
+	useEffect(() => {
+		return () => {
+			if (streamRef.current) {
+				stopStream();
+			}
 		};
+	}, []);
 
-		setPoints((prev) => [...prev, newPoint]);
-	};
-
-	// Отрисовка интерфейса
 	return (
-		<div className='w-full h-screen flex flex-col items-center bg-black text-white'>
-			<video ref={videoRef} className='hidden' autoPlay playsInline />
-			<canvas
-				ref={canvasRef}
-				className='w-full h-auto max-h-[80vh]'
-				onClick={handleCanvasClick}
-			/>
+		<div className='container'>
+			<h1>Camera Stream</h1>
 
-			<div className='mt-4 text-xl'>
-				{cmPerPixel
-					? `Distance: ${calculateDistance()} cm`
-					: 'Need calibration'}
+			{error && <div className='error'>{error}</div>}
+
+			<div className='video-container'>
+				<video
+					ref={videoRef}
+					playsInline
+					muted
+					autoPlay
+					style={{ display: isStreaming ? 'block' : 'none' }}
+				/>
 			</div>
 
-			{isCalibrating && (
-				<div className='calibration-panel'>
-					<input
-						type='number'
-						placeholder='Known distance (cm)'
-						value={knownDistance}
-						onChange={(e) => setKnownDistance(e.target.value)}
-						className='text-black p-2 m-2'
-					/>
-					<button
-						onClick={handleCalibration}
-						className='bg-yellow-500 px-4 py-2 rounded'
-					>
-						Calibrate
-					</button>
-				</div>
-			)}
+			<button
+				onClick={toggleStream}
+				className={`stream-button ${isStreaming ? 'active' : ''}`}
+			>
+				{isStreaming ? 'Stop Stream' : 'Start Stream'}
+			</button>
 
-			<div className='flex gap-4 my-4'>
-				<button
-					onClick={() => setIsCalibrating(true)}
-					className='bg-purple-500 px-4 py-2 rounded'
-				>
-					Calibrate
-				</button>
-				<button
-					onClick={() => setPoints([])}
-					className='bg-blue-500 px-4 py-2 rounded'
-				>
-					Reset
-				</button>
-			</div>
+			<style jsx>{`
+				.container {
+					max-width: 600px;
+					margin: 0 auto;
+					padding: 20px;
+					text-align: center;
+				}
+
+				.video-container {
+					position: relative;
+					width: 100%;
+					height: 400px;
+					background: #000;
+					margin: 20px 0;
+				}
+
+				video {
+					width: 100%;
+					height: 100%;
+					object-fit: cover;
+				}
+
+				.stream-button {
+					padding: 12px 24px;
+					font-size: 16px;
+					background: #007bff;
+					color: white;
+					border: none;
+					border-radius: 4px;
+					cursor: pointer;
+					transition: background 0.3s;
+				}
+
+				.stream-button.active {
+					background: #dc3545;
+				}
+
+				.error {
+					color: #dc3545;
+					margin: 10px 0;
+				}
+			`}</style>
 		</div>
 	);
 };
 
-// Остальные функции (startCanvasAnimation, stopCamera) остаются как в предыдущей версии
-
-export default CameraMeasureApp;
+export default CameraStream;
