@@ -7,7 +7,6 @@ export default function CameraStream() {
 	const [points, setPoints] = useState([]);
 	const [distance, setDistance] = useState(null);
 	const [calibration, setCalibration] = useState(null);
-	const [isCalibrating, setIsCalibrating] = useState(false);
 
 	useEffect(() => {
 		if (streaming) {
@@ -32,8 +31,10 @@ export default function CameraStream() {
 	const handleCanvasClick = (event) => {
 		if (points.length < 2) {
 			const rect = canvasRef.current.getBoundingClientRect();
-			const x = event.clientX - rect.left;
-			const y = event.clientY - rect.top;
+			const scaleX = videoRef.current.videoWidth / rect.width;
+			const scaleY = videoRef.current.videoHeight / rect.height;
+			const x = (event.clientX - rect.left) * scaleX;
+			const y = (event.clientY - rect.top) * scaleY;
 			setPoints([...points, { x, y }]);
 		}
 	};
@@ -100,14 +101,15 @@ export default function CameraStream() {
 				<video
 					ref={videoRef}
 					autoPlay
+					playsInline
 					className='w-full rounded-lg shadow-md'
 				/>
 				<canvas
 					ref={canvasRef}
 					onClick={handleCanvasClick}
 					className='absolute top-0 left-0 w-full h-full'
-					width={videoRef.current?.videoWidth || 640}
-					height={videoRef.current?.videoHeight || 480}
+					width={640}
+					height={480}
 				/>
 			</div>
 			{distance && <p className='mt-2 text-lg'>Длина: {distance} см</p>}
