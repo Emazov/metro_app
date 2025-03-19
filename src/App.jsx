@@ -1,56 +1,78 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
-export default function CameraStream() {
+const App = () => {
 	const videoRef = useRef(null);
 	const canvasRef = useRef(null);
-	const [streaming, setStreaming] = useState(false);
 	const [points, setPoints] = useState([]);
 	const [distance, setDistance] = useState(null);
-	const [calibration, setCalibration] = useState(null);
+	const [stream, setStream] = useState(null);
 
+	// Инициализация камеры
 	useEffect(() => {
-		if (streaming) {
-			navigator.mediaDevices
-				.getUserMedia({ video: { facingMode: 'environment' } })
-				.then((stream) => {
-					if (videoRef.current) {
-						videoRef.current.srcObject = stream;
-					}
-				})
-				.catch((error) => console.error('Ошибка доступа к камере:', error));
-		} else {
-			if (videoRef.current && videoRef.current.srcObject) {
-				const stream = videoRef.current.srcObject;
-				const tracks = stream.getTracks();
-				tracks.forEach((track) => track.stop());
-				videoRef.current.srcObject = null;
+		const enableCamera = async () => {
+			try {
+				const stream = await navigator.mediaDevices.getUserMedia({
+					video: true,
+				});
+				setStream(stream);
+				if (videoRef.current) {
+					videoRef.current.srcObject = stream;
+				}
+			} catch (err) {
+				console.error('Ошибка доступа к камере:', err);
 			}
-		}
-	}, [streaming]);
+		};
 
-	const handleCanvasClick = (event) => {
-		if (points.length < 2) {
-			const rect = canvasRef.current.getBoundingClientRect();
-			const scaleX = videoRef.current.videoWidth / rect.width;
-			const scaleY = videoRef.current.videoHeight / rect.height;
-			const x = (event.clientX - rect.left) * scaleX;
-			const y = (event.clientY - rect.top) * scaleY;
-			setPoints([...points, { x, y }]);
+		enableCamera();
+
+		return () => {
+			if (stream) {
+				stream.getTracks().forEach((track) => track.stop());
+			}
+		};
+	}, []);
+
+	// Обработчик клика по canvas
+	const handleCanvasClick = (e) => {
+		if (points.length >= 2) return;
+
+		const rect = canvasRef.current.getBoundingClientRect();
+		const newPoint = {
+			x: e.clientX - rect.left,
+			y: e.clientY - rect.top,
+		};
+
+		setPoints([...points, newPoint]);
+
+		if (points.length === 1) {
+			const dx = newPoint.x - points[0].x;
+			const dy = newPoint.y - points[0].y;
+			setDistance(Math.sqrt(dx * dx + dy * dy));
 		}
 	};
 
+	// Отрисовка точек и линий
 	useEffect(() => {
 		const canvas = canvasRef.current;
 		const ctx = canvas.getContext('2d');
+
+		if (videoRef.current) {
+			canvas.width = videoRef.current.videoWidth;
+			canvas.height = videoRef.current.videoHeight;
+		}
+
 		ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-		points.forEach((point) => {
+		// Рисуем точки
+		points.forEach((point, index) => {
 			ctx.beginPath();
-			ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
+			ctx.arc(point.x, point.y, 5, 0, 2 * Math.PI);
 			ctx.fillStyle = 'red';
 			ctx.fill();
+			ctx.fillText(`${index + 1}`, point.x + 10, point.y - 10);
 		});
 
+		// Рисуем линию между точками
 		if (points.length === 2) {
 			ctx.beginPath();
 			ctx.moveTo(points[0].x, points[0].y);
@@ -58,81 +80,47 @@ export default function CameraStream() {
 			ctx.strokeStyle = 'red';
 			ctx.lineWidth = 2;
 			ctx.stroke();
-
-			const dx = points[1].x - points[0].x;
-			const dy = points[1].y - points[0].y;
-			const pixelDistance = Math.sqrt(dx * dx + dy * dy);
-
-			if (calibration) {
-				const realDistance =
-					(pixelDistance / calibration.pixelDistance) * calibration.realLength;
-				setDistance(realDistance.toFixed(2));
-			} else {
-				setDistance('Калибровка не установлена');
-			}
 		}
-	}, [points, calibration]);
+	}, [points]);
 
 	const resetMeasurement = () => {
 		setPoints([]);
 		setDistance(null);
 	};
 
-	const calibrate = () => {
-		if (points.length === 2) {
-			const dx = points[1].x - points[0].x;
-			const dy = points[1].y - points[0].y;
-			const pixelDistance = Math.sqrt(dx * dx + dy * dy);
-			const realLength = prompt(
-				'Введите реальную длину эталонного объекта в см:'
-			);
-			if (realLength) {
-				setCalibration({ pixelDistance, realLength: parseFloat(realLength) });
-				setPoints([]);
-				setDistance(null);
-			}
-		}
-	};
-
 	return (
-		<div className='flex flex-col items-center p-4'>
-			<h1 className='text-xl font-bold mb-4'>Камера в браузере</h1>
-			<div className='relative w-full max-w-md'>
+		<div className='container'>
+			<div style={{ position: 'relative' }}>
 				<video
 					ref={videoRef}
 					autoPlay
 					playsInline
-					className='w-full rounded-lg shadow-md'
+					style={{ width: '100%', height: 'auto' }}
 				/>
 				<canvas
 					ref={canvasRef}
+					style={{
+						position: 'absolute',
+						top: 0,
+						left: 0,
+						width: '100%',
+						height: '100%',
+					}}
 					onClick={handleCanvasClick}
-					className='absolute top-0 left-0 w-full h-full'
-					width={640}
-					height={480}
 				/>
 			</div>
-			{distance && <p className='mt-2 text-lg'>Длина: {distance} см</p>}
-			<div className='flex gap-2 mt-4'>
-				<button
-					onClick={() => setStreaming(!streaming)}
-					className='px-4 py-2 bg-blue-500 text-white rounded-lg shadow hover:bg-blue-600'
-				>
-					{streaming ? 'Остановить' : 'Запустить'} стрим
-				</button>
-				<button
-					onClick={resetMeasurement}
-					className='px-4 py-2 bg-red-500 text-white rounded-lg shadow hover:bg-red-600'
-				>
-					Сбросить
-				</button>
-				<button
-					onClick={calibrate}
-					className='px-4 py-2 bg-green-500 text-white rounded-lg shadow hover:bg-green-600'
-				>
-					Калибровать
-				</button>
+
+			<div className='controls'>
+				{distance && (
+					<div>
+						<p>Расстояние: {(distance / 37.8).toFixed(2)} см</p>
+						<small>(Калибровка требует точной настройки под устройство)</small>
+					</div>
+				)}
+				<button onClick={resetMeasurement}>Сбросить</button>
 			</div>
 		</div>
 	);
-}
+};
+
+export default App;
